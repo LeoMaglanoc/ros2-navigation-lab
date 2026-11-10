@@ -39,13 +39,27 @@ between explicit simulation advances. This makes ownership/pause assertions repe
 
 ## Deployment
 
-The initial release must pass GitHub Actions web and ROS jobs before Pages deployment.
-Public URL verification will be recorded here after the first successful deployment.
+Release source: `957f918453a1a2aa0a0791b4923980f7ee56a6b1`.
+[GitHub Actions run 42827862368](https://github.com/LeoMaglanoc/ros2-navigation-lab/actions/runs/42827862368)
+completed successfully: web checks, real ROS Docker checks, and Pages deployment.
+
+Public verification on 2026-11-10:
+- [Live demo](https://leonardo-maglanoc.com/ros2-navigation-lab/) returns HTTP 200 over HTTPS.
+- `nav_core.wasm` returns HTTP 200 with `application/wasm`, size 59,644 bytes.
+- The default `leomaglanoc.github.io` project URL redirects to the portfolio domain.
+- `BASE_URL=https://leonardo-maglanoc.com/ros2-navigation-lab/ npm test`: **9/9 pass**
+  in Google Chrome against the actual deployed site, including touch and orientation tests.
+- Screenshots for laptop, portrait, and landscape were inspected. Extra layout spot checks
+  at 320×568, 667×375, 640×360, and 1920×1080 kept controls visible without horizontal overflow.
+
+Pages inherits the account's existing custom domain; HTTPS is enforced for this new
+project. No custom backend or change to the portfolio's root-site source was required.
+Subsequent documentation-only commits do not trigger redeployment.
 
 ## Reproduce
 
 Follow README.md for Docker startup, then run the commands in the table. To verify a
-public deployment, set `BASE_URL=https://leomaglanoc.github.io/ros2-navigation-lab/` before
+public deployment, set `BASE_URL=https://leonardo-maglanoc.com/ros2-navigation-lab/` before
 `npm test`. The suite then loads the deployed WASM at the repository subpath.
 
 Reference base image digests resolved during the first Docker build:

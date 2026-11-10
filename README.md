@@ -4,7 +4,7 @@ A small robot, a fixed map, and your next destination. Click or tap open space a
 robot plans a route with A*. Change your mind while it moves: a new valid goal replaces
 the route immediately.
 
-**[Try the live demo](https://leomaglanoc.github.io/ros2-navigation-lab/)** ·
+**[Try the live demo](https://leonardo-maglanoc.com/ros2-navigation-lab/)** ·
 [Architecture](docs/architecture.md) · [Learn ROS 2](docs/learning.md) ·
 [Project plan](PLAN.md) · [Verification](docs/verification.md)
 

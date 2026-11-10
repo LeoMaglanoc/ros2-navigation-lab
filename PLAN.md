@@ -172,7 +172,7 @@ Create public `LeoMaglanoc/ros2-navigation-lab`, initialize main, commit source/
 push, configure Pages source as Actions, and run the workflow. CI runs web/core/Chrome
 and ROS Docker checks before deployment. Verify the actual public repository subpath.
 **Gate:** successful Actions deployment, HTTP 200 for page and WASM, Chrome acceptance
-against `https://leomaglanoc.github.io/ros2-navigation-lab/`, clean local Git state.
+against `https://leonardo-maglanoc.com/ros2-navigation-lab/`, clean local Git state.
 Do not report the live demo as working merely because a push succeeded.
 
 ## 6. Verification matrix
@@ -200,3 +200,11 @@ while base-image digests for the verified run are recorded separately.
 A change to motion geometry, concurrency, frames or QoS needs an updated explanation
 and relevant independent checks. Do not rerun unrelated checks endlessly, but do not
 ship a change that invalidates a previously tested assumption. Keep the UI small.
+
+## 8. Completion record
+
+All milestones M0–M7 are complete for the bounded MVP. Source, lockfiles, Docker targets,
+ROS packages, tests and learning docs are pushed to the public repository. GitHub Actions
+run 42827862368 passed and deployed release source `957f918`. The live HTTPS subpath
+passed all nine Chrome acceptance tests. See docs/verification.md for configuration,
+commands, evidence links, and the limits of the phone emulation/ROS simulation claims.
