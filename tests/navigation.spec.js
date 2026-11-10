@@ -8,19 +8,18 @@ async function clickWorld(page, x, y, touch = false) {
   else await page.mouse.click(px, py);
 }
 async function state(page) {
-  return page
-    .locator("#map")
-    .evaluate((c) => ({
-      ...c.dataset,
-      pose: JSON.parse(c.dataset.pose),
-      goal: JSON.parse(c.dataset.goal),
-    }));
+  return page.locator("#map").evaluate((c) => ({
+    ...c.dataset,
+    pose: JSON.parse(c.dataset.pose),
+    goal: JSON.parse(c.dataset.goal),
+  }));
 }
 test.beforeEach(async ({ page }) => {
-  await page.clock.install();
+  await page.clock.install({ time: new Date("2026-11-10T00:00:00Z") });
+  // Freeze on the blank page, before ROS startup can make a relative deadline stale.
+  await page.clock.pauseAt(new Date("2026-11-10T12:00:00Z"));
   await page.goto("./");
   await expect(page.locator("#loading")).toBeHidden();
-  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 100));
 });
 test("navigation, replacement, rejection, pause, arrival and reset", async ({
   page,
@@ -91,7 +90,7 @@ test("responsive map, controls, learning content and screenshot", async ({
   });
   await page.locator("summary").click();
   await expect(page.locator(".learning")).toContainText(
-    "does not run ROS 2 middleware",
+    "Real ROS 2 nodes run in this tab.",
   );
   expect(
     await page.getByRole("link", { name: "Source" }).getAttribute("href"),
@@ -114,4 +113,74 @@ test("keyboard goals and orientation resize retain state", async ({ page }) => {
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+});
+
+test("actual browser ROS middleware delivers typed goals and telemetry", async ({
+  page,
+}, info) => {
+  const graph = () => page.evaluate(() => window.navigationLab.getRosGraph());
+  const initial = await graph();
+  expect(initial.middleware).toBe("rmw_wasm_cpp");
+  expect(initial.nodes).toEqual(["browser_ui", "navigator"]);
+  expect(initial.observed_map_cells).toBe(600);
+  expect(initial.topics.map((t) => t.name)).toEqual([
+    "/goal_pose",
+    "/control",
+    "/state",
+    "/map",
+    "/plan",
+    "/odom",
+    "/cmd_vel",
+  ]);
+  await clickWorld(page, 7, 2.6, info.project.use.hasTouch);
+  await page.clock.runFor(600);
+  const delivered = await graph();
+  const goal = delivered.topics.find((t) => t.name === "/goal_pose");
+  expect(goal.type).toBe("geometry_msgs/msg/Pose2D");
+  expect(goal.published).toBe(1);
+  expect(goal.received).toBe(1);
+  expect(delivered.observed_path_poses).toBeGreaterThan(1);
+  expect(delivered.observed_odom[0]).toBeGreaterThan(1.4);
+  for (const name of ["/state", "/odom", "/cmd_vel"]) {
+    const topic = delivered.topics.find((t) => t.name === name);
+    expect(topic.published).toBeGreaterThan(1);
+    expect(topic.received).toBe(topic.published);
+  }
+  await page.locator("summary").click();
+  await expect(page.locator("#ros-middleware")).toHaveText("rmw_wasm_cpp");
+  await expect(page.locator("#ros-topics")).toContainText("/goal_pose");
+});
+
+test("removing the real goal subscription prevents navigation", async ({
+  page,
+}, info) => {
+  await page.goto("./?test=1");
+  await expect(page.locator("#loading")).toBeHidden();
+  const before = await state(page);
+  await page.evaluate(() => window.navigationLab.setGoalSubscription(false));
+  await clickWorld(page, 7, 2.6, info.project.use.hasTouch);
+  await expect(page.locator("#notice")).toContainText(
+    "ROS goal delivery is unavailable",
+  );
+  await page.clock.runFor(1500);
+  const blocked = await state(page);
+  expect(blocked.goalId).toBe("0");
+  expect(blocked.pose).toEqual(before.pose);
+  const graph = await page.evaluate(() => window.navigationLab.getRosGraph());
+  expect(graph.goal_subscription).toBe(false);
+  expect(graph.topics.find((t) => t.name === "/goal_pose")).toMatchObject({
+    published: 1,
+    received: 0,
+  });
+  await page.evaluate(() => window.navigationLab.setGoalSubscription(true));
+  await clickWorld(page, 2.6, 3, info.project.use.hasTouch);
+  await page.clock.runFor(600);
+  expect((await state(page)).goalId).toBe("1");
+  const restored = await page.evaluate(() =>
+    window.navigationLab.getRosGraph(),
+  );
+  expect(restored.topics.find((t) => t.name === "/goal_pose")).toMatchObject({
+    published: 2,
+    received: 1,
+  });
 });

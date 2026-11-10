@@ -1,0 +1,86 @@
+{
+  "ament/ament_cmake": {
+    "url": "https://github.com/ament/ament_cmake.git",
+    "commit": "f183b72bcaec95fac270f87652aecd3efb63eb1c"
+  },
+  "ament/ament_index": {
+    "url": "https://github.com/ament/ament_index.git",
+    "commit": "ae673e815cae9413cfbf4cab6e91a9c1c73c84ef"
+  },
+  "ament/ament_package": {
+    "url": "https://github.com/ament/ament_package.git",
+    "commit": "3c8a92b4dda05be83f6e8e879c70f219180e1384"
+  },
+  "ros2/ament_cmake_ros": {
+    "url": "https://github.com/ros2/ament_cmake_ros.git",
+    "commit": "8ca65783d089348f9138574fb1eff4e20026eea5"
+  },
+  "ros2/common_interfaces": {
+    "url": "https://github.com/ros2/common_interfaces.git",
+    "commit": "08434490d3e4abd37ccc5462cdde69b88853b5b8"
+  },
+  "ros2/libyaml_vendor": {
+    "url": "https://github.com/ros2/libyaml_vendor.git",
+    "commit": "239f695ceaa0820255f3d0fe02ec8c2bd41b8e78"
+  },
+  "ros2/rcl": {
+    "url": "https://github.com/ros2/rcl.git",
+    "commit": "b50489adc465800baa9e6b69b6921d94c7df686d"
+  },
+  "ros2/rcl_interfaces": {
+    "url": "https://github.com/ros2/rcl_interfaces.git",
+    "commit": "82776fc9068d1e0cd4af11c2e2700195994b2eb1"
+  },
+  "ros2/rcl_logging": {
+    "url": "https://github.com/ros2/rcl_logging.git",
+    "commit": "5bab8cf7a19c466de77aee35fa55778298563c57"
+  },
+  "ros2/rcpputils": {
+    "url": "https://github.com/ros2/rcpputils.git",
+    "commit": "ddb3f310870e1cd5395396ca36101075420ba8ba"
+  },
+  "ros2/rcutils": {
+    "url": "https://github.com/ros2/rcutils.git",
+    "commit": "b691819d6831defb75f87a0fa809d9422cacedbb"
+  },
+  "ros2/rmw": {
+    "url": "https://github.com/ros2/rmw.git",
+    "commit": "566d17a97e87bc5336ce33fb025ce8e952a3326a"
+  },
+  "ros2/rmw_implementation": {
+    "url": "https://github.com/ros2/rmw_implementation.git",
+    "commit": "a0f867e8787cc522300e6971013c423ca59c0059"
+  },
+  "ros2/ros2_tracing": {
+    "url": "https://github.com/ros2/ros2_tracing.git",
+    "commit": "3c159b382d2d565e26eaa91e39c9ec06a5c6fe88"
+  },
+  "ros2/rosidl": {
+    "url": "https://github.com/ros2/rosidl.git",
+    "commit": "02a3de88b75af9c8d4efe167db4b14504e81cb90"
+  },
+  "ros2/rosidl_defaults": {
+    "url": "https://github.com/ros2/rosidl_defaults.git",
+    "commit": "8266f1c0f062d405595570209cfb0ed3f71684ae"
+  },
+  "ros2/rosidl_typesupport": {
+    "url": "https://github.com/ros2/rosidl_typesupport.git",
+    "commit": "94c7b6d6db353cf26adc22cb7023833fd6cd18a1"
+  },
+  "ros2/unique_identifier_msgs": {
+    "url": "https://github.com/ros2/unique_identifier_msgs.git",
+    "commit": "27767cefcf8a80da44641dc208c57722c28aa11c"
+  },
+  "ros2/yaml_cpp_vendor": {
+    "url": "https://github.com/ros2/yaml_cpp_vendor.git",
+    "commit": "77bebe7a90c0bc26df3137f15bad4a9712f9b74e"
+  },
+  "ros2wasm/rmw_wasm": {
+    "url": "https://github.com/ros2wasm/rmw_wasm.git",
+    "commit": "a8e824af1c9d8683bc5ba5b6cbd210ddd8947dc9"
+  },
+  "osrf/dynamic_message_introspection": {
+    "url": "https://github.com/osrf/dynamic_message_introspection.git",
+    "commit": "6e2e182aa7cde704d295789911170dfd8d0f7a70"
+  }
+}

@@ -12,3 +12,5 @@ __pycache__/
 .DS_Store
 
 /ros2_ws/src/navigation_lab/lib/
+
+/.ros2wasm-build/

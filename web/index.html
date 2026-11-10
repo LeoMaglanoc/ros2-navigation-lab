@@ -9,12 +9,13 @@
     <meta name="theme-color" content="#f8f9f6" />
     <meta
       name="description"
-      content="A small robot, a map, and a destination. Interactive A* navigation built in Rust and WebAssembly, with a shared ROS 2 core."
+      content="A small robot, a map, and a destination. Interactive A* navigation with real ROS 2 nodes running in your browser through ROS2WASM and a Rust planner."
     />
     <title>Navigation Lab · Rust + ROS 2</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./style.css" />
-    <script type="module" src="./app.js"></script>
+    <link rel="stylesheet" href="./style.css?v=ros2wasm-2" />
+    <script src="./ros_navigation.js?v=ros2wasm-2"></script>
+    <script type="module" src="./app.js?v=ros2wasm-2"></script>
   </head>
   <body>
     <main>
@@ -50,7 +51,7 @@
             </p>
           </div>
           <span class="badge" title="Navigation runs locally in your browser"
-            >Rust · WebAssembly</span
+            >ROS 2 · WebAssembly</span
           >
         </div>
         <div class="map-wrap" id="map-wrap">
@@ -63,7 +64,7 @@
             >Interactive navigation requires JavaScript and WebAssembly.</canvas
           >
           <div id="loading" class="loading" role="status">
-            Loading navigation engine…
+            Loading ROS 2 runtime…
           </div>
           <div class="map-scale" aria-hidden="true"><span></span>1 m</div>
         </div>
@@ -98,35 +99,52 @@
         <summary>How it works <span>Rust, A*, and ROS 2</span></summary>
         <div class="learning">
           <p>
-            <strong>One navigation core, two ways to run it.</strong> Here, Rust
-            runs as WebAssembly in your browser. A* finds a route on a grid; a
-            simple controller turns the robot and follows each segment. A new
-            valid goal immediately replaces the old route.
+            <strong>Real ROS 2 nodes run in this tab.</strong> ROS2WASM compiles
+            ROS 2's rcl node API and its browser middleware to WebAssembly. The
+            <code>browser_ui</code> node publishes your destination; the
+            <code>navigator</code> node receives it and calls the Rust A*
+            planner and controller. State returns through a ROS subscription
+            before it reaches the canvas.
           </p>
-          <p>
-            The same Rust code runs natively behind a Python ROS 2 node. That
-            node exposes a navigation action and publishes the map, path,
-            odometry, velocity, and transforms.
-            <strong
-              >This standalone browser demo does not run ROS 2 middleware or
-              connect to a robot.</strong
-            >
-          </p>
-          <div class="flow" aria-label="Navigation data flow">
-            <span>Click a goal</span><b>→</b><span>Rust A*</span><b>→</b
-            ><span>Controller</span><b>→</b><span>Robot pose</span>
+          <div class="flow" aria-label="Actual ROS navigation data flow">
+            <span>browser_ui</span><b>→ /goal_pose →</b
+            ><span>navigator + Rust</span><b>→ /state →</b><span>Canvas</span>
           </div>
+          <p>
+            <strong>Live nodes:</strong> <code id="ros-nodes">Starting…</code
+            ><br />
+            <strong>Middleware:</strong>
+            <code id="ros-middleware">Starting…</code>
+          </p>
+          <div class="topic-table">
+            <table aria-label="Live browser ROS topic delivery">
+              <thead>
+                <tr>
+                  <th>Topic</th>
+                  <th>ROS type</th>
+                  <th>Published / received</th>
+                </tr>
+              </thead>
+              <tbody id="ros-topics"></tbody>
+            </table>
+          </div>
+          <p>
+            These counts come from real ROS publish/take calls. This
+            experimental runtime communicates locally inside your browser; it
+            does not connect to a robot or provide production DDS, ROS actions,
+            parameters, or QoS guarantees.
+          </p>
           <p id="keyboard-help">
             <strong>Keyboard:</strong> focus the map, use arrow keys to choose a
-            cell, then press Enter. Pause holds the robot in place. Reset
-            returns it to the start.
+            cell, then press Enter. Pause holds the robot. Reset returns it to
+            the start.
           </p>
           <p>
             <a
               href="https://github.com/LeoMaglanoc/ros2-navigation-lab#readme"
               target="_blank"
               rel="noopener noreferrer"
-              >Run the ROS 2 version with Docker ↗</a
+              >Explore the nodes and build it with Docker ↗</a
             >
           </p>
         </div>

@@ -1,3 +1,5 @@
+import { createRuntime } from "./ros-runtime.js?v=ros2wasm-2";
+
 const canvas = document.querySelector("#map");
 const ctx = canvas.getContext("2d");
 const status = document.querySelector("#status");
@@ -14,7 +16,6 @@ let accumulator = 0,
   previousTime = null,
   latestState = "",
   telemetryTime = 0;
-const decoder = new TextDecoder();
 const help =
   "Goals snap to the grid. The robot keeps a safe distance from walls.";
 const errors = [
@@ -22,16 +23,13 @@ const errors = [
   "Choose a destination inside the map.",
   "Too close to a wall. Choose an open space.",
   "No route to that space. Your current goal is unchanged.",
+  "ROS goal delivery is unavailable. Please reload the demo.",
 ];
 function read() {
-  const ptr = api.nav_snapshot();
-  // Read memory after snapshot allocation: WebAssembly memory can grow.
-  return JSON.parse(
-    decoder.decode(
-      new Uint8Array(api.memory.buffer, ptr, api.nav_snapshot_len()),
-    ),
-  );
+  // This snapshot was received by browser_ui through its actual ROS subscription.
+  return api.read();
 }
+
 function project(x, y) {
   return [view.left + x * view.scale, view.top + (8 - y) * view.scale];
 }
@@ -83,7 +81,32 @@ function update() {
   canvas.dataset.pose = JSON.stringify(snapshot.pose);
   canvas.dataset.goal = JSON.stringify(snapshot.goal);
   canvas.dataset.ticks = snapshot.ticks;
+  const graph = api.diagnostics();
+  canvas.dataset.middleware = graph.middleware;
+  canvas.dataset.rosNodes = JSON.stringify(graph.nodes);
+  if (document.querySelector("#learn").open) updateRosGraph(graph);
 }
+function updateRosGraph(graph = api.diagnostics()) {
+  document.querySelector("#ros-nodes").textContent = graph.nodes.join(" → ");
+  document.querySelector("#ros-middleware").textContent = graph.middleware;
+  const rows = graph.topics.map((topic) => {
+    const tr = document.createElement("tr");
+    for (const value of [
+      topic.name,
+      topic.type,
+      `${topic.published} / ${topic.received}`,
+    ]) {
+      const td = document.createElement("td");
+      td.textContent = value;
+      tr.append(td);
+    }
+    return tr;
+  });
+  document.querySelector("#ros-topics").replaceChildren(...rows);
+}
+document.querySelector("#learn").addEventListener("toggle", () => {
+  if (api && document.querySelector("#learn").open) updateRosGraph();
+});
 function roundRect(x, y, w, h, r, fill) {
   ctx.fillStyle = fill;
   ctx.beginPath();
@@ -295,16 +318,13 @@ function frame(time) {
   requestAnimationFrame(frame);
 }
 try {
-  const response = await fetch(new URL("./nav_core.wasm", import.meta.url));
-  if (!response.ok)
-    throw new Error(`Engine request failed (${response.status})`);
-  const { instance } = await WebAssembly.instantiate(
-    await response.arrayBuffer(),
-    {},
-  );
-  api = instance.exports;
-  api.nav_reset();
+  api = await createRuntime();
   snapshot = read();
+  const diagnostics = { getRosGraph: api.diagnostics };
+  if (new URL(location.href).searchParams.has("test")) {
+    diagnostics.setGoalSubscription = api.setGoalSubscriptionForTest;
+  }
+  window.navigationLab = Object.freeze(diagnostics);
   reset.disabled = false;
   document.querySelector("#loading").hidden = true;
   new ResizeObserver(resize).observe(canvas);
@@ -313,7 +333,7 @@ try {
   requestAnimationFrame(frame);
 } catch (error) {
   document.querySelector("#loading").textContent =
-    "The navigation engine could not load. Please refresh or try a browser with WebAssembly enabled.";
-  status.textContent = "Engine unavailable";
+    "The ROS 2 runtime could not load. Please refresh or try a browser with WebAssembly enabled.";
+  status.textContent = "ROS 2 runtime unavailable";
   console.error(error);
 }

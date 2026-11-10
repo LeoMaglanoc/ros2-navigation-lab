@@ -444,3 +444,40 @@ footer {
     scroll-behavior: auto;
   }
 }
+.learning code {
+  font:
+    11px ui-monospace,
+    SFMono-Regular,
+    monospace;
+  color: #344f40;
+}
+.topic-table {
+  margin: 0 0 18px;
+}
+.topic-table table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 11px;
+  text-align: left;
+}
+.topic-table th,
+.topic-table td {
+  padding: 8px 5px 8px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+.topic-table th {
+  font-weight: 550;
+  color: #344f40;
+}
+.topic-table th:first-child {
+  width: 24%;
+}
+.topic-table th:nth-child(2) {
+  width: 48%;
+}
+.topic-table td {
+  font-family: ui-monospace, monospace;
+}

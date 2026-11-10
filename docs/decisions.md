@@ -1,6 +1,10 @@
 # Architecture decisions
 
-## ADR 001 — Share a Rust core; keep ROS native (accepted)
+ADR 006 is the current browser architecture. ADR 001/002/004 below record the
+superseded v1 boundary and optional native reference; they do not describe the live
+ROS2WASM browser runtime.
+
+## ADR 001 — Share a Rust core; keep ROS native (superseded for browser)
 
 **Problem:** provide a server-free GitHub Pages demo and teach actual ROS 2 without
 turning a small navigation project into a middleware-porting research effort.
@@ -20,7 +24,7 @@ learning its own executable, tested application.
 **Cost:** the browser is not a ROS node and cannot demonstrate live ROS transport.
 The UI and docs disclose this. Adding live connectivity is outside the MVP.
 
-## ADR 002 — rclpy adapter and scalar C ABI (accepted)
+## ADR 002 — rclpy adapter and scalar C ABI (native reference only)
 
 Use rclpy for communication and an ordinary native Rust library for navigation. Do not
 claim to use rclrs. A Rust ROS client is a reasonable alternative for a native-only
@@ -41,7 +45,7 @@ waypoint clipping avoid diagonal corner collisions and overshoot. A* gives short
 length, not minimum time with turning costs. No smoothing, dynamics or final orientation
 is promised. Differential-drive velocity semantics are retained without a wheel model.
 
-## ADR 004 — One ROS state owner (accepted)
+## ADR 004 — One ROS state owner (native reference only)
 
 Use one `navigation_server` node with logical planning/control/simulation functions.
 Multiple nodes are useful when hardware drivers, localization, and control have separate
@@ -55,3 +59,17 @@ Canvas and plain HTML/CSS/JavaScript are enough for one map and two controls. No
 is required. Keep the map, status, Pause, and Reset visible on three target layouts;
 learning details are collapsible. Docker multi-stage targets build both runtimes from
 the same source and run nginx or ROS separately. GitHub Pages receives only static files.
+
+## ADR 006 — Actual browser ROS is required (accepted; supersedes ADR 001/002/004 for browser)
+
+The user clarified that the website itself must execute ROS 2, as ROS2WASM demonstrates.
+The former shared-core/native-only ROS boundary did not meet that goal. Use upstream
+ROS 2 Humble rcl and rmw_wasm_cpp compiled by Emscripten, with a thin C++ layer owning
+two browser-local nodes. Keep Rust for A*/control. Requests and rendered state must pass
+through actual typed ROS publish/take operations. Prove this with a negative test that
+removes the navigation goal subscription. Keep the app small and static-hostable.
+
+Use goal/control/state topics because upstream's supported feature table excludes
+ROS actions, parameters and QoS. Do not silently promise the native adapter's richer
+interfaces in the browser. No production DDS interoperability is claimed. The separate
+native rclpy application remains a reference, not the runtime behind the website.

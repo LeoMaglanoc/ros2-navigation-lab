@@ -1,38 +1,58 @@
-# Navigation Lab
+# Navigation Lab — ROS 2 in your browser
 
-A small robot, a fixed map, and your next destination. Click or tap open space and the
-robot plans a route with A*. Change your mind while it moves: a new valid goal replaces
-the route immediately.
+Click a destination, watch a robot plan with A*, and change its goal while it moves.
+**Actual ROS 2 nodes run inside the browser**, compiled to WebAssembly using
+[ROS2WASM](https://ros2wasm.dev/). Rust implements the planner, controller and simulator;
+a thin C++ ROS layer carries goals and state between two real nodes.
 
-**[Try the live demo](https://leonardo-maglanoc.com/ros2-navigation-lab/)** ·
+**[Live demo](https://leonardo-maglanoc.com/ros2-navigation-lab/)** ·
 [Architecture](docs/architecture.md) · [Learn ROS 2](docs/learning.md) ·
-[Project plan](PLAN.md) · [Verification](docs/verification.md)
+[Plan](PLAN.md) · [Verification](docs/verification.md)
 
-Rust implements the planner, controller, and simulator. The website runs that code as
-WebAssembly, entirely on your device. A real ROS 2 application uses the **same core**
-as a native library through a small Python adapter.
+No remote ROS server, Zenoh router, rosbridge service or local installation is required
+for visitors. GitHub Pages serves two WASM modules and a small HTML/CSS/JavaScript UI.
 
-> The public website is a standalone simulation. It does not run ROS 2 middleware or
-> connect to a robot. The Docker ROS 2 application below publishes real ROS messages
-> and provides a real navigation action. This is a teaching project, not Nav2.
+## What runs where
 
-## Use the demo
+```mermaid
+flowchart LR
+  click[Click / tap] --> ui[browser_ui ROS node]
+  ui -->|/goal_pose: Pose2D| middleware[rmw_wasm_cpp]
+  middleware --> navigator[navigator ROS node]
+  navigator --> rust[Rust A* + controller]
+  rust --> navigator
+  navigator -->|/state + typed telemetry| middleware
+  middleware --> ui
+  ui --> canvas[Canvas + status]
+```
 
-- Tap or click open space to set a goal; tap elsewhere to replace it during motion.
-- Goals snap to 0.4 m cell centres. Walls and their light clearance bands are blocked.
-- Pause holds the robot; Resume continues. Reset returns it to its starting pose.
-- Keyboard: focus the map, use arrow keys to select a cell, then Enter to navigate.
-- An invalid or unreachable destination leaves the current route unchanged.
+Both nodes, the ROS `rcl` library, and ROS2WASM middleware execute in a WASM module in
+this tab. The Rust engine executes in another WASM module. The navigator's actual ROS
+subscription handler calls Rust; the canvas reads state received through a ROS
+subscription. JavaScript handles input, rendering, scheduling and the module boundary.
 
-The interface adapts to laptop, phone portrait, and phone landscape. The map preserves
-its world proportions when the available screen is short. Expand **How it works** for
-a short explanation without crowding the demo.
+This is a small ROS teaching application, not Nav2. Browser-local ROS2WASM transport
+is experimental: this project does not claim production DDS interoperability, ROS
+actions, parameter services or QoS guarantees. See [the exact boundary](docs/architecture.md).
 
-## Quick start with Docker
+## Try it
 
-Prerequisites: Git, Docker Engine/Desktop, and Docker Compose v2. No host Rust, Node,
-or ROS installation is needed to run either application. The first build downloads
-Rust and ROS images and takes longer than subsequent builds.
+- Click or tap open space to set a goal; tap elsewhere to replace it during motion.
+- Goals snap to 0.4 m cells. Walls and the light clearance band are blocked.
+- Pause holds the robot. You can replace its goal while paused, then Resume.
+- Reset returns it to the start. Invalid/unreachable requests preserve the current route.
+- Keyboard: focus the map, choose a cell with arrow keys, then press Enter.
+- Expand **How it works** to inspect live node names, topic types and delivery counts.
+
+The UI stays small: one map, one status line, Pause and Reset. It adapts to laptop,
+phone portrait, and phone landscape. A short viewport letterboxes the map instead of
+distorting its world coordinates.
+
+## Run with Docker
+
+Prerequisites: Git and Docker Engine/Desktop with Compose v2. Host Rust, ROS and Node
+are not required for this path. The first build compiles ROS dependencies from source
+and can take several minutes; later app edits reuse the dependency layer.
 
 ```bash
 git clone https://github.com/LeoMaglanoc/ros2-navigation-lab.git
@@ -40,148 +60,126 @@ cd ros2-navigation-lab
 docker compose up --build -d web
 ```
 
-Open [localhost:8080](http://localhost:8080). Stop with `docker compose down`.
-
-### Run real ROS 2
+Open [localhost:8080](http://localhost:8080). Stop with:
 
 ```bash
-docker compose --profile ros up --build -d ros
-docker compose logs -f ros
+docker compose down
 ```
 
-The ROS container is separate from the website: opening the page does not connect it
-to this node. Commands below run inside the same container so DDS discovery works
-without host-network or platform-specific multicast configuration.
+Docker builds the Rust engine and actual ROS2WASM runtime, then serves only static files
+from nginx. It does **not** leave a native ROS backend running behind the website.
+The reference build environment is Linux x86_64; physical phones need only a browser.
 
-In another terminal:
+## Development and tests
 
-```bash
-# See the actual node and its interfaces.
-docker compose exec ros bash -lc 'source /workspace/install/setup.bash; ros2 node list'
-docker compose exec ros bash -lc 'source /workspace/install/setup.bash; ros2 node info /navigation_server'
-docker compose exec ros bash -lc 'source /workspace/install/setup.bash; ros2 action list -t'
-
-# Send a goal in metres, in the map frame. Ctrl+C stops this CLI client, not the robot.
-docker compose exec ros bash -lc 'source /workspace/install/setup.bash; ros2 action send_goal /navigate_2d navigation_interfaces/action/Navigate2D "{x: 7.0, y: 2.6}" --feedback'
-```
-
-While that command runs, send a different goal from another terminal:
-
-```bash
-docker compose exec ros bash -lc 'source /workspace/install/setup.bash; ros2 action send_goal /navigate_2d navigation_interfaces/action/Navigate2D "{x: 2.6, y: 3.0}" --feedback'
-```
-
-The first action ends with `ABORTED` and a superseded explanation; the second owns
-motion and eventually succeeds. ROS actions have no separate “preempted” terminal
-status. Cancellation is also implemented and exercised by the integration test.
-
-Inspect telemetry:
-
-```bash
-docker compose exec ros bash -lc 'source /workspace/install/setup.bash; ros2 topic echo /odom --once'
-docker compose exec ros bash -lc 'source /workspace/install/setup.bash; ros2 topic echo /cmd_vel --once'
-docker compose exec ros bash -lc 'source /workspace/install/setup.bash; ros2 topic echo /map --qos-durability transient_local --once'
-docker compose exec ros bash -lc 'source /workspace/install/setup.bash; ros2 run tf2_ros tf2_echo map base_link'
-```
-
-Here `/cmd_vel` reports the simulator's actual velocity; it is not a motor-driver input.
-There is no fabricated `/scan`, localization, sensor noise, or physical robot driver.
-See the [interface table](docs/architecture.md#ros-interfaces) for rates, types, and QoS.
-
-Stop the ROS application with `docker compose --profile ros down`.
-
-### Run the real ROS acceptance test
-
-This starts its own server, so use a separate isolated container rather than a running
-interactive server's network namespace:
-
-```bash
-docker build --target ros -t ros2-navigation-lab:ros .
-docker run --rm -e ROS_DOMAIN_ID=43 ros2-navigation-lab:ros python3 /workspace/tests/ros_integration.py
-```
-
-It observes actual DDS messages and verifies rejected goals, replacement, unreachable
-goals, cancellation, final success, frames, map contents, and velocity bounds.
-
-## How the pieces fit
-
-```mermaid
-flowchart LR
-  click[Browser click / tap] --> wasm[Rust core as WASM]
-  wasm --> canvas[Canvas robot + route]
-  cli[ROS action client] --> ros[Python ROS 2 adapter]
-  ros --> native[Same Rust core as native library]
-  native --> ros
-  ros --> graph[map / plan / odom / cmd_vel / tf]
-```
-
-The core searches a 30 × 20 grid using four-connected A* and a Manhattan heuristic.
-A circular robot turns in place and follows cardinal segments at bounded speed.
-A fixed 50 Hz simulation makes the native and browser execution comparable.
-
-ROS 2 adds communication and action lifecycle management around that logic. A single
-node is sufficient because this simulator has one state owner; splitting every function
-into a separate node would add distributed-state problems without helping this MVP.
-[Read the decisions and alternatives](docs/decisions.md).
-
-## Local development without Docker
-
-Prerequisites: rustup, Node.js 22, and Python 3. The pinned Rust toolchain and WASM
-target are selected by `rust-toolchain.toml`.
+For a local Rust/JS workflow, install rustup, Node.js 22, Python 3 and Docker. Docker is
+still used to cross-compile the ROS runtime; there is no hidden host ROS dependency.
 
 ```bash
 npm ci
 cargo test --locked --workspace
 npm run build
 npm run test:parity
-python3 -m http.server 8080 --directory dist
+npm test
 ```
 
-In another terminal, test against that server in Google Chrome:
+The pinned Rust compiler/target comes from `rust-toolchain.toml`. `npm run build` builds
+Rust and invokes `scripts/build-browser-ros.sh`, which builds/extracts the ROS artifacts
+from Docker. Output goes to ignored `dist/` and `.ros2wasm-build/` directories.
+
+Browser tests use **Google Chrome**:
 
 ```bash
 npx playwright install --with-deps chrome
+# Against the Docker website:
 BASE_URL=http://127.0.0.1:8080 npm test
+# Against the deployed project subpath:
+BASE_URL=https://leonardo-maglanoc.com/ros2-navigation-lab/ npm test
 ```
 
-`npm test` without `BASE_URL` starts a temporary Python server on port 4173.
-Playwright's three projects use **Google Chrome**, including mobile viewport/touch
-emulation. These checks do not replace tests on physical iOS/Android devices.
+Without `BASE_URL`, tests start a temporary Python server on port 4173. A normal local
+preview can be started with `python3 -m http.server 8080 --directory dist`.
 
-For native ROS development on Ubuntu 24.04 with ROS 2 Jazzy installed, see
-[the learning guide](docs/learning.md#native-development).
+### Evidence that ROS is actually involved
 
-## Repository guide
+The Chrome suite checks live `rmw_get_implementation_identifier()` output, initialized
+rcl node names, typed topic delivery, a received 600-cell map, a received planned path,
+and moving odometry. A separate test calls `rcl_subscription_fini` on the actual goal
+subscription: clicks then cannot start navigation. Recreating the subscription restores
+navigation. This catches an accidental direct UI-to-Rust bypass.
 
-| Path | Responsibility |
+The suite also checks goal replacement, rejection, pause/replacement/resume, arrival,
+reset, keyboard input and orientation changes across three layouts. Phone coverage is
+Chrome viewport/touch emulation, not physical iOS/Android certification.
+
+Rust tests independently compare A* with uniform-cost search on 400 seeded maps and
+check continuous grid-edge footprint clearance, speed bounds and goal ownership.
+Native/WASM parity checks the shared algorithm, separately from ROS middleware behavior.
+
+## Nodes and topics
+
+| Topic | Type | Direction |
+| --- | --- | --- |
+| `/goal_pose` | `geometry_msgs/msg/Pose2D` | browser_ui → navigator |
+| `/control` | `std_msgs/msg/UInt8` | browser_ui → navigator |
+| `/state` | `std_msgs/msg/String` | navigator → browser_ui |
+| `/map` | `nav_msgs/msg/OccupancyGrid` | navigator → browser_ui |
+| `/plan` | `nav_msgs/msg/Path` | navigator → browser_ui |
+| `/odom` | `nav_msgs/msg/Odometry` | navigator → browser_ui |
+| `/cmd_vel` | `geometry_msgs/msg/Twist` | navigator → browser_ui |
+
+The C++ adapter uses ROS 2's low-level `rcl` API, with explicit cooperative publish/take
+processing. It does not port `rclrs` into the browser or reimplement ROS in JavaScript.
+Both nodes share a runtime/context. `rmw_wasm_cpp` handles typed message conversion and
+browser-local delivery; no external network middleware is needed for this arrangement.
+
+Read [the interface contract](docs/architecture.md#interfaces) for rates, frames, units,
+control codes, timestamps and unsupported features. The [learning guide](docs/learning.md)
+traces one goal and explains how to interpret the live counts.
+
+## Repository map
+
+| Path | Purpose |
 | --- | --- |
-| `crates/nav-core/` | Grid, obstacle clearance, A*, controller, simulation, scalar ABI |
-| `web/` | Plain HTML/CSS/JS, input conversion, rendering; no duplicated navigation logic |
-| `ros2_ws/src/navigation_interfaces/` | `Navigate2D.action` definition |
-| `ros2_ws/src/navigation_lab/` | ROS 2 adapter and launch file |
-| `tests/` | Native/WASM parity, Chrome acceptance, real ROS integration |
-| `Dockerfile`, `compose.yaml` | Reproducible web and ROS environments |
-| `docs/` | Architecture, decisions, learning exercises, verification evidence |
-| `AGENTS.md`, `PLAN.md` | Contribution rules and detailed implementation plan |
+| `crates/nav-core/` | Rust grid, A*, footprint, controller, simulator and scalar ABI |
+| `ros2_wasm/src/browser_navigation/` | Real browser ROS nodes and typed pub/sub adapter |
+| `ros2_wasm/vendor.lock.json` | Exact upstream ROS/ROS2WASM source commits |
+| `ros2_wasm/scripts/` | Source fetching, documented portability patches and license collection |
+| `web/` | Minimal UI, renderer, fixed-step clock and WASM module boundary |
+| `tests/` | Chrome behavior/ROS checks, Rust parity and native-reference ROS acceptance |
+| `Dockerfile`, `compose.yaml` | Browser build/server and optional native-reference environment |
+| `docs/`, `AGENTS.md`, `PLAN.md` | Architecture, decisions, exercises, verification and working rules |
+| `ros2_ws/` | Optional native Jazzy/rclpy reference, separate from the browser runtime |
 
-## Deployment
+## Optional native ROS reference
 
-GitHub Actions tests the core and Chrome UI, builds/tests the ROS Docker image, uploads
-the static `dist/` artifact, and deploys it to GitHub Pages on `main`. PRs run checks
-without deployment. All web assets use relative URLs, so the repository subpath works.
+The earlier native ROS adapter remains available for CLI/action/QoS/TF exercises. It
+uses the same Rust algorithms, but has a different ROS graph and richer native middleware.
+It is **not** what executes the browser demo. See [native reference](docs/native-reference.md).
 
-To set up a fork: enable **Settings → Pages → Source → GitHub Actions**, update the
-repository/demo links in the HTML and README, then push to `main`. No secret, router,
-WebSocket server, or ROS installation is required for the public demo.
+## Deployment and upstream code
 
-## Limits
+GitHub Actions builds the Rust and ROS2WASM artifacts, runs Chrome and core checks,
+checks the native reference, then deploys static output to Pages on `main`. PRs run
+checks without deployment; documentation-only changes do not redeploy. All runtime
+assets use relative URLs, so the portfolio project subpath works.
 
-This intentionally small example has a fixed known map, perfect simulated pose,
-conservative grid clearance, no dynamics or acceleration model, and no final heading
-constraint. Shortest means shortest grid route, not fastest trajectory. The browser
-pauses simulation while its tab is hidden and caps catch-up after long stalls. The
-native ROS timer advances one 20 ms step per callback; this is not a real-time system.
-There is no live synchronization between the two runtimes.
+For a fork: enable **Settings → Pages → Source → GitHub Actions**, update the repository
+and live-demo links, then push to `main`. No router or backend secret is required.
 
-Tested configurations and reproducible checks are recorded in
-[docs/verification.md](docs/verification.md). Licensed under [MIT](LICENSE).
+The ROS runtime is built from pinned upstream source, not downloaded demo binaries.
+[Build notes](docs/build-notes.md) document the few cross-compilation fixes and why they
+exist. License/notice texts are included in the static `licenses/` directory. Project
+code is [MIT](LICENSE); upstream components retain their respective licenses.
+
+## Deliberate simplifications
+
+The map is fixed and known, the pose is perfect, the robot turns in place before driving,
+and A* finds shortest cardinal grid length rather than fastest motion. There is no
+SLAM, laser sensor, final-heading constraint, wheel/dynamics model or physical driver.
+The browser schedules fixed 20 ms simulation steps and discards hidden-tab catch-up.
+This is neither a real-time system nor a complete ROS distribution in a tab.
+
+The [v1 design](docs/history/v1-readme.md) kept ROS native and was superseded because
+browser-executed ROS is a requirement. Current behavior and evidence are documented
+in the main docs, not inferred from those historical tests.

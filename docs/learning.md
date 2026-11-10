@@ -1,136 +1,156 @@
-# Learn the system by observing it
+# Learn ROS 2 through the browser
 
-Start with the Docker commands in the README. Each exercise connects a ROS concept to
-something you can see, then asks you to explain it without relying on a memorized term.
+Start with the live demo or `docker compose up --build -d web`. You do not need a native
+ROS installation to observe this application's real browser-executed ROS nodes.
 
-## 1. Find the node
+## 1. Find the real nodes
 
-Run `ros2 node list` and `ros2 node info /navigation_server` inside the ROS container.
-A node is a participant with interfaces and responsibilities, not a synonym for a class
-or a single function. This node owns the simulated world and exposes navigation.
+Expand **How it works**. The application reports `browser_ui → navigator` and
+`rmw_wasm_cpp`. These names are read from initialized `rcl_node_t` handles. The middleware
+identity comes from `rmw_get_implementation_identifier()`.
 
-**Expected evidence:** one navigation node, its action server, and publishers for map,
-path, odometry, velocity, and TF. Other temporary CLI nodes may appear while inspecting.
+Read `ros2_wasm/src/browser_navigation/src/navigation.cpp`, starting at `main()`.
+Find the two `rcl_node_init` calls and each topic's publisher/subscriber initialization.
+A node is a participant with responsibilities/interfaces, not a synonym for a process.
+Two nodes can share one process/context; here they share one WASM instance.
 
-**Explain:** why can one node contain both a planner and controller? When would splitting
-out a hardware driver become useful?
+**Explain:** which node handles visitor requests, which invokes the planner, and why do
+neither a WASM filename nor a ROS-looking UI alone prove that ROS is executing?
 
-## 2. Distinguish topics, services, and actions
+## 2. Follow a destination through a topic
 
-Topics carry streams or retained data. A service handles a request and response. An
-action tracks a longer operation with a goal, feedback, terminal result, and cancellation.
-Navigation fits the latter because completion takes time and users change their goals.
+Reset, note `/goal_pose`'s counts, then click a reachable destination. Both published and
+received counts increase. `/plan` gains a new route; `/state` and `/odom` update as it moves.
 
-```bash
-docker compose exec ros bash -lc 'source /workspace/install/setup.bash; ros2 action info /navigate_2d'
-docker compose exec ros bash -lc 'source /workspace/install/setup.bash; ros2 interface show navigation_interfaces/action/Navigate2D'
-docker compose exec ros bash -lc 'source /workspace/install/setup.bash; ros2 topic list --include-hidden-topics'
+Follow the source:
+1. `app.js` converts pointer coordinates and calls the browser runtime adapter.
+2. `ros_goal` constructs a real `geometry_msgs::msg::Pose2D` and calls `rcl_publish`.
+3. `process_goals` takes it through `rcl_take` in the navigator.
+4. Only that handler calls the Rust engine's goal function.
+5. Rust computes the route; the navigator publishes a Path and rendering state.
+6. The UI's actual ROS subscriber receives state; the canvas reads that received snapshot.
+
+The topic counters observe the adapter's publish/take operations. They are not DDS
+acknowledgments, timing guarantees, or fabricated JavaScript topic traffic.
+
+**Explain:** what does ROS contribute here? What does Rust contribute? Why should moving
+A* into JavaScript not be necessary to change the renderer?
+
+## 3. Distinguish delivery from acceptance
+
+Send a new valid goal while the robot moves. The route changes immediately. Now tap a wall
+or the disconnected centre at approximately `(10.6,6.2)` metres.
+
+**Expected evidence:** the goal topic still carries the request, but the UI reports the
+validation/no-route outcome, the existing route is preserved, and `/plan` is not replaced.
+A topic delivered a message; the application decided whether to act on it.
+
+Pause, send another valid goal, and Resume. The robot holds while paused and later follows
+the newest valid route. Read Rust `Engine::set_goal` for the transaction that prevents
+failed requests from clearing an active route.
+
+**Explain:** why are message delivery, goal reachability and motion ownership separate
+concerns? What prevents an old goal's callback from taking control later in this design?
+
+## 4. Prove that ROS is required
+
+The automated Chrome suite removes an actual subscription using `rcl_subscription_fini`.
+For a manual experiment, open the page with `?test=1`, Reset, and use the developer console:
+
+```js
+navigationLab.getRosGraph()
+navigationLab.setGoalSubscription(false)
 ```
 
-Read `ros2_ws/src/navigation_interfaces/action/Navigate2D.action`. Its three sections
-are goal, result, and feedback. Compare those fields with `server.py`.
+Click a reachable destination. Its publication count increases, its received count does
+not, and navigation stays idle. Restore the real subscription:
 
-**Explain:** why is sending a destination once different from publishing instantaneous
-velocity continuously? Why is an action more useful than a bare goal topic here?
-
-## 3. Replace a goal while moving
-
-Use the two send-goal commands in the README. Watch feedback from the first terminal,
-then send the second goal before the first finishes.
-
-**Expected evidence:** the first result is aborted with “Superseded”, the new goal owns
-motion, and the old result callback cannot clear the new route. In the browser, the goal
-marker and remaining route change immediately. A request for `(10.6,6.2)` is geometrically
-free but disconnected; it fails while preserving the previous goal.
-
-**Explain:** acceptance, reachability, preemption policy, and cancellation are separate
-choices. Why should an unreachable replacement preserve the existing valid route?
-
-For executable cancellation and assertions, read `tests/ros_integration.py`, particularly
-`cancel_goal_async()`. Ctrl+C on a CLI feedback client does not reliably cancel the robot.
-
-## 4. Inspect pose and frames
-
-Read one `/odom` message and run `tf2_echo map base_link`. Compare the position with the
-core snapshot conventions. Quaternions use `z = sin(yaw/2), w = cos(yaw/2)` for planar yaw.
-
-**Expected evidence:** pose and TF agree; the parent is `map`, child is `base_link`.
-
-**Explain:** why does screen y point down while world y points up? Why is this ideal
-simulator's `/odom` not evidence of a localization algorithm? Why is there no separate
-`odom` frame or fake laser topic?
-
-## 5. Discover QoS by joining late
-
-The map is published once. Start a transient-local map subscriber after the server starts:
-
-```bash
-docker compose exec ros bash -lc 'source /workspace/install/setup.bash; ros2 topic echo /map --qos-durability transient_local --once'
-docker compose exec ros bash -lc 'source /workspace/install/setup.bash; ros2 topic info /map --verbose'
+```js
+navigationLab.setGoalSubscription(true)
 ```
 
-**Expected evidence:** the late subscriber gets the retained map. Volatile telemetry is
-useful for recent data but does not promise historical messages. Reliability, durability,
-and queue depth are different policies.
+A new click now navigates. The missing subscription is not simulated by changing the
+canvas. The C++ fault hook destroys/recreates the rcl subscription. Removing it does not
+implicitly cancel a previously active route, which is why this exercise starts with Reset.
 
-**Explain:** why retain the map/path but stream odometry? Why does “reliable” alone not
-mean a late subscriber receives a message published before it existed?
+The fault hook is exposed to the test harness only on `?test=1`; read-only diagnostics
+remain available on the normal page. See the browser test for reproducible assertions.
 
-## 6. Derive the planner
+**Explain:** why is this stronger evidence than displaying a ROS badge or publishing
+unused telemetry alongside an unrelated animation?
 
-Trace `Grid::plan` in Rust. Mark the open queue, g-costs, parents, heuristic, stale-entry
-check and reconstruction. On a four-neighbor grid, moving one cell changes Manhattan
-distance by at most one; it cannot overestimate the minimum number of cardinal steps.
+## 5. Read message types, frames and units
 
-Draw a small map on paper, run the search, and compare it with uniform-cost BFS.
-Read the independent oracle in the Rust tests. It deliberately avoids the production
-neighbor helper. One-cell corridors can be free for a point but blocked for this robot.
+Inspect the topic table and [interface contract](architecture.md#interfaces).
+- Pose2D carries a destination x/y in metres; this application fixes its frame as `map`.
+- Path is a list of stamped cell-centre poses; it is a route rather than a velocity stream.
+- Odometry carries pose plus twist; here pose is perfect simulated ground truth.
+- Twist reports body-forward speed in m/s and yaw rate in rad/s.
+- OccupancyGrid describes raw walls; the planner separately inflates them for robot size.
 
-**Explain:** what exactly is optimal? Why is the shortest grid route not necessarily
-fastest once turns consume time? Why does robot radius change which goals are valid?
+All world geometry uses +x right and +y up. Canvas y points down, so the UI flips it at
+the input/rendering boundary. The robot rotates counterclockwise for positive yaw; the
+planar quaternion uses `z=sin(yaw/2), w=cos(yaw/2)`.
 
-## 7. Trace one click end to end
+Timestamps derive from simulation ticks and reset to zero. There is no independent
+localization estimate, browser TF broadcaster, laser sensor or physical driver.
 
-1. `app.js` converts a pointer through the map's scale/letterbox to world metres.
-2. `nav_goal` validates and snaps the destination, then runs Rust A*.
-3. A successful transaction replaces the route and increments `goal_id`.
-4. Fixed ticks turn and translate the robot along its waypoints.
-5. A snapshot drives drawing and the status text.
-6. In native ROS mode, the same tick updates `/odom`, `/cmd_vel`, and TF instead.
-7. Arrival completes the action or updates browser status.
+**Explain:** why is a point's collision-free route not automatically safe for a robot
+disc? Why is `/cmd_vel` in this demo an observation, rather than a motor-driver input?
 
-**Explain:** which part is navigation logic, which is middleware, which is UI, and which
-part does GitHub Pages host?
+## 6. Understand rcl, client libraries and middleware
 
-## Native development
+`rcl` is the shared ROS client-library foundation. Ordinary native applications commonly
+use higher-level `rclcpp` or `rclpy` and an executor. This thin browser adapter uses rcl
+explicitly so initialization, message ownership and non-blocking processing remain small
+and visible. `rmw` is the middleware boundary; `rmw_wasm_cpp` provides this browser-local
+implementation and typed introspection/YAML conversion.
 
-On Ubuntu 24.04 with ROS 2 Jazzy, its Python development tools, `colcon`, `rosdep`, and
-Rust installed, the equivalent build is:
+Two real ROS nodes exchange messages locally inside one WASM instance. That does not
+mean a host `ros2 topic list` can discover them over DDS. ROS2WASM's published support
+table excludes actions, parameters and QoS; this project does not claim those features.
 
-```bash
-source /opt/ros/jazzy/setup.bash
-cargo build --locked --release
-mkdir -p ros2_ws/src/navigation_lab/lib
-cp target/release/libnav_core.so ros2_ws/src/navigation_lab/lib/
-cd ros2_ws
-rosdep install --from-paths src --ignore-src -r -y
-colcon build
-source install/setup.bash
-ros2 launch navigation_lab navigation.launch.py
-```
+For production native navigation, an action can represent goal, feedback, result and
+cancellation. Here goal/control/state topics provide a small explicit application
+protocol because the selected browser middleware does not support ROS actions.
 
-The package's setup.py installs the native library into its share directory. For rapid
-Rust iteration, `NAV_CORE_LIBRARY` can override that path with an absolute `.so` path.
-The native host recipe is provided for development; the verified reference environment
-is the Docker image, not every possible host ROS installation.
+**Explain:** why is this still actual ROS code, and why is it also not a full native ROS
+installation in a browser? Why would claiming Nav2 compatibility be misleading?
 
-## Interview teach-back
+## 7. Derive A* and its independent checks
 
-You should be able to explain in two minutes:
-- Why Rust/WASM does not automatically mean browser-native ROS 2.
-- How the same engine is reused without duplicating planning in Python/JS.
-- Why the heuristic is admissible and what the collision model guarantees.
-- How a moving robot accepts a new goal without an old result taking control.
-- Which topics/actions exist, their types/units, and why each is needed.
-- Why there is one node, why the map uses transient-local QoS, and what TF expresses.
-- Which tests provide independent evidence and which assumptions remain simplified.
+Read `Grid::plan` in Rust. Identify g-costs, the open queue, parent pointers, the Manhattan
+heuristic, stale-entry removal and route reconstruction. Every step costs one and moves
+cardinally; Manhattan distance cannot overestimate the remaining number of such steps.
+
+The tests compare A* with a separate uniform-cost BFS on 400 seeded maps. With equal
+edge costs, BFS is an independent shortest-cost reference. Its adjacency code does not
+reuse the production helper. Separate tests check exact continuous swept-disc clearance
+on every allowed edge and verify turn/translation bounds and latest-goal ownership.
+
+**Explain:** why is a shortest grid route not necessarily the fastest path when turns
+consume time? What would need to change before adding diagonals or smoothing?
+
+## 8. Reproduce the build and execution boundary
+
+`npm run build` compiles Rust and asks Docker to build upstream ROS sources at exact
+commits. Inspect `vendor.lock.json`, `patch-sources.py`, and the Docker stages. Inspect
+the built `ros_navigation.wasm` beside `nav_core.wasm`: the first owns ROS communication,
+the second navigation algorithms. Their memories are separate; copied JSON and scalar
+calls connect them.
+
+Run `npm test` for actual Google Chrome execution. Run the same suite against the public
+URL to verify GitHub Pages can load and execute the runtime under the project subpath.
+
+**Explain:** what does Docker do during the build, and why does a visitor not need Docker?
+Why did native/WASM parity alone fail to establish browser ROS execution in v1?
+
+## Teach-back checklist
+
+In two minutes, explain the two nodes, a goal's publication and subscription, the Rust
+algorithm boundary, the returned state subscription, the independent tests, and the
+middleware's limits. Point to the exact source calls and observed evidence for each.
+
+For optional CLI/action/QoS/TF exercises outside the browser, use the separate
+[native ROS reference](native-reference.md). Those capabilities belong to that native
+application and do not extend the browser middleware's support.

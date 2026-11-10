@@ -1,20 +1,24 @@
-# Primary sources and compatibility evidence
+# Primary sources and executable evidence
 
-Reviewed 2026-11-10. These sources informed the decisions; only local executable checks
-establish that this repository's selected combination works.
+Reviewed 2026-11-10. Immutable source commits used by the actual browser build are
+recorded in `ros2_wasm/vendor.lock.json`; source URLs alone are not feasibility proof.
 
-- [Rust wasm32-unknown-unknown target](https://doc.rust-lang.org/stable/rustc/platform-support/wasm32-unknown-unknown.html): supported target and restrictions. The actual crate builds with Rust 1.96.0; the WASM parity test asserts zero imports.
-- [ROS 2 action design](https://design.ros2.org/articles/actions.html): goal, feedback, cancel and result semantics; no distinct preempted terminal state.
-- [Jazzy rclpy action server source](https://github.com/ros2/rclpy/blob/jazzy/rclpy/rclpy/action/server.py): accepted callbacks, execution, futures and terminal transitions. This is the versioned implementation behind the adapter's lifecycle.
-- [Jazzy action server example](https://github.com/ros2/examples/blob/jazzy/rclpy/actions/minimal_action_server/examples_rclpy_minimal_action_server/server.py): upstream action API example. Our cooperative implementation avoids its demonstration sleep.
-- [Jazzy OccupancyGrid.msg](https://github.com/ros2/common_interfaces/blob/jazzy/nav_msgs/msg/OccupancyGrid.msg): row-major indexing and metadata. Our occupancy convention is explicitly 0/100.
-- [ROS 2 QoS design](https://design.ros2.org/articles/qos.html): reliability and durability reasoning. Exact publisher profiles are in server.py.
-- [ROS2WASM](https://ros2wasm.dev/): browser ROS research with Humble as its primary documented target; not evidence that this Rust crate or rclrs compiles against its middleware.
-- [ROS 2 Emscripten/Zenoh demonstration](https://www.tobiasfischer.info/ros2-emscripten-zenoh-demo/): actual C++/Python ROS browser execution, with a router required for its communicating demos. Does not establish the requested Rust/browser combination.
-- [ros2-rust upstream](https://github.com/ros2-rust/ros2_rust): native Rust ROS bindings considered but not used; we do not claim rclrs compatibility.
-- [GitHub Pages custom workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages): upload/deploy artifact workflow for a static project site.
+- [ROS2WASM](https://ros2wasm.dev/): project and demonstrations of browser-executed ROS.
+- [rmw_wasm upstream](https://github.com/ros2wasm/rmw_wasm): actual middleware source and support table. Publishers/subscribers/services are listed; actions, parameters and QoS are not supported.
+- [Pinned local-delivery context](https://github.com/ros2wasm/rmw_wasm/blob/a8e824af1c9d8683bc5ba5b6cbd210ddd8947dc9/wasm_cpp/src/context.cpp): the in-module subscriber routing this design uses without a remote server.
+- [ROS2WASM builder](https://github.com/ros2wasm/ros2wasm-builder): Emscripten 3.1.45 build settings and rcutils portability precedent. We use a project Docker build with explicit source pins and patches, not this older workflow unmodified.
+- [ROS 2 rcl source](https://github.com/ros2/rcl/tree/humble/rcl): actual node, publisher, subscription and message-processing foundation compiled into the browser.
+- [Common ROS interfaces](https://github.com/ros2/common_interfaces/tree/humble): real Pose2D/Twist/Path/Odometry/OccupancyGrid message definitions and generated introspection.
+- [Dynamic message introspection](https://github.com/osrf/dynamic_message_introspection): YAML/message conversion used by the middleware.
+- [Rust WASM target](https://doc.rust-lang.org/stable/rustc/platform-support/wasm32-unknown-unknown.html): target used by the separate Rust algorithm module, not evidence of Rust ROS bindings in the browser.
+- [ROS action design](https://design.ros2.org/articles/actions.html): useful for the optional native reference, explicitly not claimed by this browser middleware.
+- [GitHub Pages custom workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages): static artifact deployment under the portfolio project subpath.
 
-The docs.ros.org tutorial pages returned an access-denied page during research, so the
-versioned upstream implementation and raw message definitions were inspected instead.
-No browser-native ROS experiment was required after selecting the shared-core architecture;
-its feasibility remains unclaimed, rather than being incorrectly marked proven.
+The selected architecture was tested by building upstream ROS sources in Docker, observing
+live rcl node handles and real typed delivery in Chrome, and removing/recreating the actual
+goal subscription to verify that ROS participates in behavior. See verification.md.
+
+The separate [Zenoh WASM demonstration](https://www.tobiasfischer.info/ros2-emscripten-zenoh-demo/)
+is another genuine browser-ROS approach, but its communicating demos require a router.
+This project instead uses ROS2WASM's in-module local transport and does not inherit that
+infrastructure requirement or claim compatibility with that different stack.

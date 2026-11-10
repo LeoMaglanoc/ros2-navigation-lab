@@ -1,161 +1,169 @@
-# Architecture and behavioral contract
+# Architecture: actual ROS 2 in the browser
 
-## Runtime boundary
+This architecture supersedes the native-only ROS boundary in v1. The public browser
+application executes real ROS 2 `rcl` node code and upstream `rmw_wasm_cpp` middleware.
+Rust still owns navigation. No remote backend is needed for browser-local delivery.
 
-The core is one dependency-light Rust crate. `cdylib` produces a `.wasm` for the browser
-and a `.so` for Linux. Neither build depends on ROS. Browser JavaScript calls scalar
-exports; ROS Python calls the same exports using `ctypes`. Both copy a JSON snapshot
-immediately after requesting it. The snapshot pointer remains valid only until the next
-snapshot call. All calls are serialized. The ABI is internal to the repository and ships
-with both adapters; it is not a stable external plugin API.
+## Components and ownership
 
-| Runtime | Executes | Communications | Required infrastructure |
-| --- | --- | --- | --- |
-| Browser | Rust WASM + HTML/CSS/JS | Function calls and copied snapshots | Any static HTTP host |
-| ROS Docker | Native Rust `.so` + rclpy | DDS topics and ROS action protocol | Linux container running Jazzy |
-| GitHub Actions | Rust, Node/Chrome, Docker | Build/test/deploy | GitHub-hosted runner |
+| Component | Executes | Owns |
+| --- | --- | --- |
+| `nav_core.wasm` | Browser WASM instance | Grid, inflation, A*, goal/route state, controller and simulator |
+| `ros_navigation.wasm` | Browser WASM instance | Real rcl nodes, typed publishers/subscribers, message conversion and handling |
+| `ros_navigation.js` | Browser JS | Emscripten's generated runtime/loader |
+| `ros-runtime.js` | Browser JS | Module initialization and scalar/JSON boundary to Rust |
+| `app.js` + Canvas | Browser JS | Pointer/keyboard conversion, rendering, UI and fixed-step scheduling |
+| Docker/Actions | Build environment | Source cross-compilation, tests, static hosting output |
 
-The public website does not execute ROS 2 middleware. The native ROS application is
-an independently runnable demonstration of the identical planner/controller. No claim
-of browser-native ROS is necessary or made.
+The C++ application uses low-level `rcl`, the ROS client-library foundation. It does not
+claim that Rust ROS bindings run in the browser. A thin C++ layer is an explicit tradeoff
+that keeps ROS execution genuine while retaining the Rust planner/controller.
 
-## Ownership and data flow
-
-```mermaid
-flowchart TD
-  subgraph Browser
-    input[Pointer or keyboard goal] --> adapter[JS: screen to world conversion]
-    adapter --> engine[Engine: grid / A* / controller / simulator]
-    clock[Animation frame accumulator] -->|fixed 20 ms ticks| engine
-    engine -->|JSON snapshot| render[JS: Canvas rendering + status]
-  end
-  subgraph ROS 2 container
-    client[CLI / action client] -->|Navigate2D goal| node[navigation_server]
-    node -->|serialized C ABI calls| native[Same Engine, native build]
-    timer[50 Hz ROS timer] --> node
-    native -->|copied JSON snapshot| node
-    node -->|feedback / result| client
-    node --> topics[map / plan / odom / cmd_vel / tf]
-  end
-```
-
-One ROS node owns the engine. The planner, controller, and simulator are logical modules,
-not automatically separate ROS processes. The `SingleThreadedExecutor` serializes all
-callbacks. The action server uses a `ReentrantCallbackGroup` so a suspended execution
-coroutine does not prevent goal/cancel service callbacks. It awaits a `rclpy.task.Future`;
-the timer or a newer goal resolves it. There are no sleeps in callbacks, Python worker
-threads, or asynchronous planning jobs.
-
-## Map, geometry, and motion
-
-- World: 12 × 8 m; grid: 30 × 20; resolution: 0.4 m/cell. Origin `(0,0)` is bottom left.
-- All public coordinates are metres and radians. Positive yaw is counterclockwise.
-- `id = floor(y / 0.4) * 30 + floor(x / 0.4)`; a cell centre is
-  `((column + 0.5) * 0.4, (row + 0.5) * 0.4)`.
-- Canvas y points down. Input and rendering flip it exactly once. The drawing is
-  letterboxed when needed; pointer conversion subtracts the same offset.
-- Occupied cells are closed axis-aligned rectangles. The robot is a disc of radius
-  0.18 m, with a further 0.03 m clearance margin.
-- A cell is blocked when its centre's Euclidean distance to an occupied rectangle is
-  at most 0.21 m. On this particular uniform cardinal grid, this conservatively excludes
-  the adjacent cell band. Raw occupied cells and inflated cells are shown differently.
-- Four-connected motion, no diagonals and no corner cutting. A* unit edge costs and
-  Manhattan heuristic make the heuristic consistent. Deterministic queue ties use
-  `(f, g, cell_id)` order; stale cost entries are ignored.
-- Start: `(1.4,1.4,0)`. Max forward speed: 0.9 m/s. Max yaw rate: 3 rad/s.
-- Fixed `dt = 0.02 s`. First turn in place toward a waypoint, then translate along its
-  segment, clipping the final step to land on the waypoint without overshoot.
-- No acceleration, momentum, wheel geometry, localization, or final yaw requirement.
-- Replanning starts in the robot's current cell. The first waypoint is that cell's centre;
-  it may briefly backtrack along the current cardinal segment before following the new
-  route. This is deliberate and avoids diagonal shortcuts during goal replacement.
-- The clearance argument relies on these cardinal segment and uniform-grid constraints.
-  A future smoothing/diagonal controller would need segment-level swept-disc checks.
-
-The controller can rotate and move in separate ticks. It never translates while rotating.
-`path_length` includes the return to the current cell centre at replan time, whereas A*
-optimality refers only to the grid route from start cell to goal cell.
-
-## Goal lifecycle
+## Actual ROS graph
 
 ```mermaid
-stateDiagram-v2
-  [*] --> idle
-  idle --> moving: valid reachable goal
-  moving --> moving: newer valid reachable goal replaces route
-  moving --> arrived: final waypoint reached
-  arrived --> moving: valid reachable goal
-  moving --> canceled: ROS cancellation
-  canceled --> moving: valid reachable goal
-  moving --> moving: invalid / unreachable request leaves route unchanged
+flowchart LR
+  input[Pointer / keyboard] --> ui[browser_ui: rcl node]
+  ui -->|goal_pose: Pose2D| rmw[rmw_wasm_cpp]
+  ui -->|control: UInt8| rmw
+  rmw --> nav[navigator: rcl node]
+  nav --> engine[Rust engine]
+  engine --> nav
+  nav -->|state / map / plan / odom / cmd_vel| rmw
+  rmw --> ui
+  ui --> renderer[Canvas + status + learning panel]
 ```
 
-Pause is an orthogonal browser flag. While paused the robot stays fixed and its velocity
-is zero, but a valid new goal can replace its route. Resume follows the newest route.
-Reset constructs a fresh engine, including ticks, metrics, and goal IDs.
+Both nodes are created with `rcl_node_init` and share one context in one WASM instance.
+Each topic has a real `rcl_publisher_t` and `rcl_subscription_t`; the adapter calls
+`rcl_publish` and `rcl_take`. ROS2WASM performs introspection-based YAML serialization
+and routes to its registered local subscribers. No JavaScript replacement topic bus is
+used. This in-module transport is provided by the pinned upstream middleware source.
 
-Goal transaction:
-1. Reject nonfinite/out-of-bounds coordinates.
-2. Reject occupied/clearance-blocked destination cells.
-3. Search from the current robot cell to the destination cell centre.
-4. If no route exists, leave every field of the current engine unchanged.
-5. On success, replace path and goal together, increment `goal_id`, reset waypoint,
-   and zero instantaneous velocity. No old route remains scheduled.
+The browser event loop drives cooperative processing; there are no OS threads, pthreads,
+SharedArrayBuffer, Web Workers, Asyncify, or external routers in this design. Processing
+never waits for a future message: a take with no message returns and the UI can continue.
 
-Browser errors are shown as text and preserve the current route. A same-cell goal
-is allowed and returns to that cell centre. Arrival uses the final centre position,
-with floating-point positional tolerance `1e-9 m`; reaching the goal does not constrain yaw.
+This is not a complete DDS network in a browser. The selected experimental middleware
+has incomplete graph discovery and does not support actions, parameters or QoS policy
+guarantees. Live names/counters in the learning panel come from the initialized handles
+and actual publish/take operations, not from a claim of complete ROS graph introspection.
 
-ROS lifecycle:
-- Invalid/blocked requests are rejected at action admission.
-- A geometrically valid but disconnected goal is accepted, then aborted with a no-route
-  result. Its failure does not preempt the existing goal.
-- A newer reachable goal aborts the previous action with a “Superseded” message.
-  There is no `PREEMPTED` terminal state in the ROS 2 action protocol.
-- Canceling the current goal clears its path, zeros velocity, and ends it as canceled.
-- Only the active action ID can stop motion. Old execute coroutines only return their
-  own saved results and never mutate the engine.
+## One click, end to end
 
-## ROS interfaces
+1. `app.js` converts canvas position to world metres using the rendering scale/letterbox.
+2. Its runtime adapter calls the C++ `ros_goal` export, not Rust `nav_goal`.
+3. `browser_ui` publishes `geometry_msgs/msg/Pose2D` on `/goal_pose`.
+4. The navigator takes that message through `rcl_take`.
+5. Its subscription handler invokes Rust through a small Emscripten host import.
+6. Rust validates/snaps the goal and runs A*. On success it atomically replaces the route;
+   invalid/blocked/unreachable requests leave the current route untouched.
+7. The navigator publishes a typed `/plan` and a `/state` rendering snapshot.
+8. `browser_ui` takes the state message. The renderer reads that received JSON, never the
+   Rust engine's private state directly.
+9. Each fixed step advances navigation and publishes state; odom/velocity publish every
+   fifth step. Arrival updates the state received by the UI.
 
-Names below assume the default root namespace. The action type is deliberately custom,
-not `nav2_msgs/action/NavigateToPose`: this project does not implement Nav2's stack or
-promise its semantics.
+The C++ layer holds no duplicate planner or controller. `ros-runtime.js` privately owns
+the raw Rust instance and supplies its methods only to the ROS module's handlers.
 
-| Interface | Type | Producer → consumer | Rate / QoS | Frame / units |
+## Interfaces
+
+Every topic below has one publisher and one subscriber. Labels are root-relative inside
+this browser context. There is no automatic connection to a host ROS domain or CLI.
+
+| Topic | Type | From → to | Publication schedule | Meaning |
 | --- | --- | --- | --- | --- |
-| `/navigate_2d` | `navigation_interfaces/action/Navigate2D` | CLI/client ↔ navigation_server | On demand; feedback 10 Hz; standard rclpy action QoS | Goal x/y in map metres; feedback x/y/metres remaining |
-| `/map` | `nav_msgs/msg/OccupancyGrid` | navigation_server → inspection/RViz | Once at start; reliable, transient local, depth 1 | map; origin identity; 0 free, 100 occupied |
-| `/plan` | `nav_msgs/msg/Path` | navigation_server → inspection/RViz | Startup, accepted reachable goal, cancel; reliable, transient local, depth 1 | map; full planned cell-centre route |
-| `/odom` | `nav_msgs/msg/Odometry` | navigation_server → observer | 50 Hz; reliable, volatile, depth 10 | header map, child base_link; metres, rad, m/s, rad/s |
-| `/cmd_vel` | `geometry_msgs/msg/Twist` | navigation_server → observer | 50 Hz; reliable, volatile, depth 10 | body-frame forward linear.x, yaw angular.z |
-| `/tf` | `tf2_msgs/msg/TFMessage` | TransformBroadcaster → TF listeners | 50 Hz; tf2 broadcaster defaults | map → base_link |
+| `/goal_pose` | `geometry_msgs/msg/Pose2D` | browser_ui → navigator | Every destination request | x/y metres in implicit map frame; theta ignored |
+| `/control` | `std_msgs/msg/UInt8` | browser_ui → navigator | Startup/reset/pause/resume | 0 reset, 1 pause, 2 resume, 3 cancel |
+| `/state` | `std_msgs/msg/String` | navigator → browser_ui | Each step and immediate command/goal processing | JSON snapshot for the renderer; state and accepted goal_id included |
+| `/map` | `nav_msgs/msg/OccupancyGrid` | navigator → browser_ui | Startup and reset | 30×20, 0.4 m cells, 0 free/100 occupied, map frame |
+| `/plan` | `nav_msgs/msg/Path` | navigator → browser_ui | Startup/reset, successful goal, cancel | Full cell-centre route in map frame |
+| `/odom` | `nav_msgs/msg/Odometry` | navigator → browser_ui | Every fifth step, plus controls | Perfect pose in map; child base_link; body-frame twist |
+| `/cmd_vel` | `geometry_msgs/msg/Twist` | navigator → browser_ui | Every fifth step, plus controls | Observed forward linear.x (m/s), yaw angular.z (rad/s) |
 
-`/odom` names the conventional topic, but pose is perfect simulated ground truth expressed
-in `map`, not noisy odometry in a separate drifting `odom` frame. The TF tree is simply
-`map → base_link`. No redundant identity map→odom transform is added. Covariances remain
-zero because this is an ideal simulator, not an uncertainty estimator.
+A nominal 50 Hz simulation makes odom/velocity nominally 10 Hz. The ROS layer is polled
+by the browser schedule, not a ROS executor timer. Message timestamps are simulation
+elapsed time derived from Rust ticks (`ticks / 50`); reset returns this time to zero.
+No `/clock` publisher or native-system-time synchronization is claimed.
 
-`/map` is the raw geometry, not the inflated planner mask. `/plan` remains the full route
-when an action succeeds; cancellation clears it. `/cmd_vel` is an observation output;
-there is no separate command subscriber or simulated motor-driver node.
+The raw map is distinct from the inflated planning mask. `/plan` remains the complete
+accepted route after arrival and is cleared on cancel/reset. `/cmd_vel` is an observation
+output, not an external motor command input. Pose is ideal ground truth, not localization
+or noisy odometry. All covariance fields stay zero in this idealized model.
 
-The action protocol also creates hidden goal/result/cancel services, feedback/status
-topics, and ordinary ROS parameter infrastructure. Use `ros2 action info` rather than
-inventing a separate status topic. No `/scan` exists because no range sensor is simulated.
+No `/scan` is fabricated. There is no browser `/tf` broadcaster because all geometry is
+already expressed in one known map frame. The optional native reference has a separate
+TF/action/QoS graph; its interfaces must not be presented as browser capabilities.
 
-## Timing and browser behavior
+`/state` is a renderer-specific JSON payload inside an actual standard ROS String message.
+The typed map/path/odometry/velocity publications independently exercise ordinary message
+schemas. This avoids a custom message-generator package for a small UI snapshot.
 
-Rendering is driven by `requestAnimationFrame`; navigation advances at 50 Hz with an
-accumulator. Delta time is capped at 100 ms per animation frame; hidden-tab time is
-explicitly discarded. A background tab therefore cannot suddenly teleport the robot
-when restored. JSON snapshots include 600 cell flags; this small fixed map needs no
-worker, React, graphics framework, binding generator, or asynchronous planner.
+## Goal lifecycle and ordering
 
-The ROS timer advances exactly one step per callback. ROS message timestamps use the
-ROS clock, not the engine tick counter. Heavy system load slows simulation relative to
-wall time; this is intentionally not a real-time control implementation.
+`ros_goal` publishes and processes available goal messages in one synchronous cooperative
+turn. There is no asynchronous planning job or transport between machines in this MVP.
+A valid reachable replacement takes control immediately. Accepted `goal_id` increments
+only on successful planning; rejected requests keep every active-engine field unchanged.
 
-The app uses relative asset URLs, including the WASM URL resolved from `import.meta.url`.
-It works at `/ros2-navigation-lab/` without hardcoded root assets, CORS, WebSockets,
-SharedArrayBuffer, or custom cross-origin isolation headers.
+| Request | Behavior |
+| --- | --- |
+| Nonfinite/outside map | Return code 1; preserve active route |
+| Occupied/clearance-blocked | Return code 2; preserve active route |
+| Free but disconnected | Return code 3; preserve active route |
+| Reachable | Return code 0; replace goal/path atomically |
+| No ROS subscription delivery | Return code 4; no navigation callback runs |
+
+The UI reports these outcomes; they are application-level goal semantics over a topic,
+not ROS action results. No `NavigateToPose` action is implemented in the browser.
+
+Engine states are idle, moving, arrived and canceled. Pause is orthogonal: the robot
+holds position/zero velocity, accepts a replacement route, and follows it on Resume.
+Reset restores initial pose and engine counters. ROS delivery counters remain cumulative
+for the lifetime of the tab, making transport evidence distinguishable from simulation state.
+
+## Geometry and controller
+
+- World: 12×8 m, 30×20 cells at 0.4 m. Origin bottom left, +x right, +y up; yaw CCW.
+- Row-major index: `floor(y/0.4)*30 + floor(x/0.4)`; goals use cell centres.
+- Robot disc radius 0.18 m plus 0.03 m margin. A centre is blocked when its Euclidean
+  distance to an occupied cell rectangle is at most 0.21 m.
+- Four-connected A*, unit edge costs, consistent Manhattan heuristic. Queue ties are
+  deterministic `(f,g,cell_id)`. No diagonal corner cutting or route smoothing.
+- Fixed step 0.02 s; maximum forward speed 0.9 m/s and yaw rate 3 rad/s. Turn in place
+  before translating; clip each final segment step to avoid overshoot.
+- A replacement route first returns to the current cell centre along the current cardinal
+  segment. Brief backtracking is deliberate; it preserves the clearance argument.
+- Arrival is at the final centre with 1e-9 m numerical tolerance and no final-yaw requirement.
+- Shortest refers to grid length, not fastest traversal with turning costs.
+
+Exact swept-disc distance tests cover every admissible cardinal grid edge against every
+occupied rectangle. That guarantee relies on this grid/controller model; adding diagonal
+segments or smoothing would require a new collision analysis.
+
+## Module ABI and memory
+
+The Rust scalar ABI is unchanged. Its snapshot pointer is borrowed until the next snapshot
+call; the JS boundary immediately copies bytes from the current WASM memory buffer.
+The ROS module receives that ASCII JSON and sends it as a ROS String. Its snapshot export
+points to the UI subscriber's saved String, which JavaScript immediately copies/parses.
+The two WASM instances do not share memory or assume Rust/C++ struct layout compatibility.
+All calls are serialized on the browser thread.
+
+The renderer drives a fixed-step accumulator from animation frames, caps catch-up to
+100 ms/frame, and discards hidden-tab time. Heavy load slows simulation; this is not
+real-time control. Static assets use URLs relative to the module, preserving the GitHub
+Pages repository subpath without custom server headers.
+
+## Evidence and failure behavior
+
+Startup verifies actual middleware identity and two initialized node handles before
+showing the ready UI. A failed ROS load displays an error; there is no silent standalone
+fallback. Chrome tests inspect received typed messages and remove/recreate the actual
+goal subscription to prove ROS is required for behavior. Test-only fault injection is
+exposed to the harness only when the page is opened with `?test=1`.
+
+The learning panel's counters are adapter observations, not DDS acknowledgments or QoS
+measurements. See verification.md for executed checks and build-notes.md for the exact
+source pins/portability fixes. Native-reference capabilities are documented separately.

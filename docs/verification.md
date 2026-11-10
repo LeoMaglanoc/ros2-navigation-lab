@@ -1,80 +1,75 @@
-# Verification record
+# ROS2WASM verification record
 
-Initial reference run: **2026-11-10**, Linux x86_64, Google Chrome, Docker Engine 28.1.1,
-Compose 2.35.1, Rust 1.96.0, Node 22.22.0, Playwright 1.58.2. Phone tests use Chrome's
-mobile viewport/touch emulation, not physical devices.
+Date: 2026-11-10. Reference host: Linux x86_64, Docker Engine 28.1.1/Compose 2.35.1,
+Rust 1.96.0, Node 22.22.0, Playwright 1.58.2, installed Google Chrome channel.
+Phone tests emulate viewport/touch behavior; no physical phone certification is claimed.
 
-## Executed locally
+## Actual browser ROS evidence
 
-| Check | Result / evidence |
-| --- | --- |
-| `cargo fmt --all -- --check` | Pass |
-| `cargo clippy --locked --workspace --all-targets -- -D warnings` | Pass |
-| `cargo test --locked --workspace` | 6 tests pass, including 400 seeded A*/uniform-cost comparisons |
-| Exact continuous edge clearance | Every allowed demo-map cardinal edge checked against every occupied rectangle using exact interval distance |
-| Motion | Full routes checked for disc clearance, displacement bounds, turn-rate bounds and arrival |
-| Goal ownership | Invalid/no-route state preservation, 100 rapid replacements, pause/cancel/same-cell behavior |
-| `npm run build` | WASM/static build passes; module about 60 KiB |
-| `npm run test:parity` | No WASM imports; native/WASM snapshots agree within 1e-10 after movement and replacement |
-| `npm test` | 9/9 Chrome tests pass with the local static server |
-| `docker compose up --build -d web` | Builds and serves the real static website from nginx |
-| `BASE_URL=http://127.0.0.1:8080 npm test` | 9/9 Chrome tests pass against Docker nginx |
-| `docker build --target ros -t ros2-navigation-lab:ros .` | Native Rust + generated ROS action + Python adapter build successfully |
-| `docker run --rm -e ROS_DOMAIN_ID=43 ros2-navigation-lab:ros python3 /workspace/tests/ros_integration.py` | Real DDS/action acceptance test passes |
+The ROS runtime was built from pinned upstream source with Emscripten 3.1.45. It loads
+in Chrome and reports `rmw_wasm_cpp` through `rmw_get_implementation_identifier()` and
+`browser_ui`, `navigator` through live rcl node handles. It receives a typed 600-cell map,
+a Path after a valid goal, moving Odometry, Twist and ROS String state messages.
 
-The ROS test observes `/map`, `/plan`, `/odom`, `/cmd_vel`, and `/tf`; checks invalid and
-blocked admission, old-goal abortion on replacement, unreachable-goal isolation,
-cancellation and zero motion, final success, frames, map contents and velocity bounds.
-It starts a real server process and does not mock rclpy or replace ROS communication.
+All **15 Chrome tests pass** locally, covering five tests in each layout:
+- Laptop: 1365×900.
+- Phone portrait: 390×844, touch emulation.
+- Phone landscape: 844×390, touch emulation.
 
-Chrome tests cover laptop 1365×900, portrait 390×844, and landscape 844×390. Each layout
-exercises navigation, replacement while moving, rejected goals, pause, replacement while
-paused, resume, arrival, reset, keyboard input, orientation resizing, visible map/controls,
-no horizontal overflow, and the truthful runtime disclosure. Screenshots are written to
-`test-results/` (ignored locally, uploaded by CI).
+The original navigation/pause/reset/keyboard/resize checks now execute through the actual
+ROS runtime. Additional checks assert real middleware identity, node names and typed
+publication/reception counters. A negative test destroys the real goal subscription with
+`rcl_subscription_fini`: a valid click publishes but cannot navigate. Recreating the
+subscription restores navigation. This excludes a direct UI-to-Rust goal bypass.
 
-The initial browser test allowed real time to progress between automated steps; on a
-busy run the robot arrived before Pause was pressed. Tests now pause the browser clock
-between explicit simulation advances. This makes ownership/pause assertions repeatable.
+The ROS binary is approximately 671 KiB and the generated loader approximately 58 KiB;
+the separate Rust algorithm module is approximately 59 KiB. This is browser-local ROS
+communication without a router or server, not a claim of complete native ROS support.
 
-## Deployment
+## Independent algorithm evidence retained
 
-Release source: `957f918453a1a2aa0a0791b4923980f7ee56a6b1`.
-[GitHub Actions run 42827862368](https://github.com/LeoMaglanoc/ros2-navigation-lab/actions/runs/42827862368)
-completed successfully: web checks, real ROS Docker checks, and Pages deployment.
+The Rust algorithm did not change in the redesign. Its six tests include 400 seeded A*
+comparisons against a separate uniform-cost BFS, reconstructed-route validity, exact
+continuous swept-disc clearance for all legal grid edges, motion speed/turn bounds,
+invalid-goal state preservation, 100 rapid replacements, pause/cancel and same-cell arrival.
+Native/WASM parity independently compares snapshots after movement and replacement.
+Those tests prove algorithm behavior; they do not substitute for the browser ROS checks.
 
-Public verification on 2026-11-10:
-- [Live demo](https://leonardo-maglanoc.com/ros2-navigation-lab/) returns HTTP 200 over HTTPS.
-- `nav_core.wasm` returns HTTP 200 with `application/wasm`, size 59,644 bytes.
-- The default `leomaglanoc.github.io` project URL redirects to the portfolio domain.
-- `BASE_URL=https://leonardo-maglanoc.com/ros2-navigation-lab/ npm test`: **9/9 pass**
-  in Google Chrome against the actual deployed site, including touch and orientation tests.
-- Screenshots for laptop, portrait, and landscape were inspected. Extra layout spot checks
-  at 320×568, 667×375, 640×360, and 1920×1080 kept controls visible without horizontal overflow.
+## Packaging and deployment
 
-Pages inherits the account's existing custom domain; HTTPS is enforced for this new
-project. No custom backend or change to the portfolio's root-site source was required.
-Subsequent documentation-only commits do not trigger redeployment.
+The final multi-stage Docker build completed successfully from a fresh ROS dependency
+build, without relying on prototype binaries or mutable cross-revision object caches.
+`BASE_URL=http://127.0.0.1:8080 npm test` passed **15/15** against nginx serving that build.
+Laptop, portrait and landscape screenshots were inspected.
+
+The test clock is frozen on the blank page before application loading. This fixes a
+harness race where a relative 100 ms pause deadline could elapse during busy startup.
+Simulation advances only when a test explicitly advances the clock.
+
+Public deployment and live-site Chrome verification are the remaining release gates.
+The historical v1 evidence is archived under docs/history/.
 
 ## Reproduce
 
-Follow README.md for Docker startup, then run the commands in the table. To verify a
-public deployment, set `BASE_URL=https://leonardo-maglanoc.com/ros2-navigation-lab/` before
-`npm test`. The suite then loads the deployed WASM at the repository subpath.
+```bash
+cargo test --locked --workspace
+npm run build
+npm run test:parity
+npm test
+docker compose up --build -d web
+BASE_URL=http://127.0.0.1:8080 npm test
+BASE_URL=https://leonardo-maglanoc.com/ros2-navigation-lab/ npm test
+```
 
-Reference base image digests resolved during the first Docker build:
-- Rust 1.96.0 bookworm: `sha256:5e2214abe154fe26e39f64488952e5c991eeed1d6d6da7cc8381ae83927f0cfc`
-- ROS Jazzy ros-base: `sha256:8eed0a4669bbf43ee331878a4c39bd8ebddea8e3312a58b4fae8edb14526b617`
-- nginx 1.28 alpine: `sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236`
+The source lock and build-notes.md document the upstream commits and portability patches.
+License/notice texts are included alongside the static runtime in `licenses/`.
 
-Docker tags can receive updates; these digests identify the observed reference run.
-Rust and JavaScript dependencies are pinned in committed lockfiles.
+## Limits
 
-## Limits of the evidence
+No production DDS interoperability, browser actions/parameters/QoS, host ROS CLI discovery,
+physical robot, physical iOS/Android test, Safari/Firefox test, real-time scheduling,
+large-map benchmark, or Rust ROS client-library port is claimed. The separate native
+Jazzy/rclpy adapter has its own action/QoS/TF evidence; these are not browser capabilities.
 
-No physical robot, hardware safety, physical phone, Safari, Firefox, performance under
-large maps, browser-native ROS, or live browser-to-ROS connection is claimed. Native
-host installation instructions have not been independently tested outside Docker.
-The CLI browser-use attachment was unavailable on this machine; acceptance testing
-instead used Playwright's installed Google Chrome channel directly. That is actual
-Chrome execution, separate from the user's existing profile.
+Browser proof comes from Playwright controlling actual Google Chrome, separately from the
+user's existing profile. No JavaScript ROS mock or downloaded upstream demo binary is used.
