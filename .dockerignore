@@ -1,0 +1,11 @@
+.git
+node_modules
+target
+dist
+test-results
+playwright-report
+ros2_ws/build
+ros2_ws/install
+ros2_ws/log
+**/__pycache__
+.env

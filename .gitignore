@@ -1,0 +1,14 @@
+/target/
+/dist/
+/node_modules/
+/test-results/
+/playwright-report/
+/ros2_ws/build/
+/ros2_ws/install/
+/ros2_ws/log/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+
+/ros2_ws/src/navigation_lab/lib/

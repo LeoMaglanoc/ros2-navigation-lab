@@ -1,0 +1,14 @@
+services:
+  web:
+    build:
+      context: .
+      target: web
+    ports:
+      - "8080:80"
+  ros:
+    build:
+      context: .
+      target: ros
+    profiles: [ros]
+    environment:
+      ROS_DOMAIN_ID: "42"

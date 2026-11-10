@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#f8f9f6" />
+    <meta
+      name="description"
+      content="A small robot, a map, and a destination. Interactive A* navigation built in Rust and WebAssembly, with a shared ROS 2 core."
+    />
+    <title>Navigation Lab · Rust + ROS 2</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="identity">
+          <svg viewBox="0 0 28 28" width="28" height="28" aria-hidden="true">
+            <rect x="2" y="2" width="24" height="24" rx="7" fill="#176b55" />
+            <path
+              d="M8 19V9h6v10h6"
+              fill="none"
+              stroke="white"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <circle cx="20" cy="9" r="2" fill="#b9e4cb" />
+          </svg>
+          <h1>Navigation Lab</h1>
+        </div>
+        <a
+          href="https://github.com/LeoMaglanoc/ros2-navigation-lab"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Source <span aria-hidden="true">↗</span></a
+        >
+      </header>
+      <section class="demo" aria-label="Interactive navigation demo">
+        <div class="intro">
+          <div>
+            <h2>A small robot. Your next destination.</h2>
+            <p id="instructions">
+              Tap any open space to navigate. Tap again to change course.
+            </p>
+          </div>
+          <span class="badge" title="Navigation runs locally in your browser"
+            >Rust · WebAssembly</span
+          >
+        </div>
+        <div class="map-wrap" id="map-wrap">
+          <canvas
+            id="map"
+            tabindex="0"
+            role="application"
+            aria-label="Navigation map. Click or tap open space to set a goal. Keyboard: arrow keys move the destination cursor, Enter sends a goal."
+            aria-describedby="instructions keyboard-help"
+            >Interactive navigation requires JavaScript and WebAssembly.</canvas
+          >
+          <div id="loading" class="loading" role="status">
+            Loading navigation engine…
+          </div>
+          <div class="map-scale" aria-hidden="true"><span></span>1 m</div>
+        </div>
+        <div class="toolbar">
+          <div
+            class="status"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <span id="status-dot" class="dot"></span
+            ><span id="status">Loading…</span>
+          </div>
+          <div class="controls">
+            <button id="pause" disabled aria-pressed="false">Pause</button
+            ><button id="reset" disabled>Reset</button>
+          </div>
+        </div>
+        <div class="map-meta">
+          <div class="legend">
+            <span><i class="robot-key"></i>Robot</span
+            ><span><i class="path-key"></i>Path</span
+            ><span><i class="goal-key"></i>Goal</span>
+          </div>
+          <output id="telemetry">12 × 8 m · A* planner</output>
+        </div>
+        <p id="notice" class="notice" aria-live="polite">
+          Goals snap to the grid. The robot keeps a safe distance from walls.
+        </p>
+      </section>
+      <details id="learn">
+        <summary>How it works <span>Rust, A*, and ROS 2</span></summary>
+        <div class="learning">
+          <p>
+            <strong>One navigation core, two ways to run it.</strong> Here, Rust
+            runs as WebAssembly in your browser. A* finds a route on a grid; a
+            simple controller turns the robot and follows each segment. A new
+            valid goal immediately replaces the old route.
+          </p>
+          <p>
+            The same Rust code runs natively behind a Python ROS 2 node. That
+            node exposes a navigation action and publishes the map, path,
+            odometry, velocity, and transforms.
+            <strong
+              >This standalone browser demo does not run ROS 2 middleware or
+              connect to a robot.</strong
+            >
+          </p>
+          <div class="flow" aria-label="Navigation data flow">
+            <span>Click a goal</span><b>→</b><span>Rust A*</span><b>→</b
+            ><span>Controller</span><b>→</b><span>Robot pose</span>
+          </div>
+          <p id="keyboard-help">
+            <strong>Keyboard:</strong> focus the map, use arrow keys to choose a
+            cell, then press Enter. Pause holds the robot in place. Reset
+            returns it to the start.
+          </p>
+          <p>
+            <a
+              href="https://github.com/LeoMaglanoc/ros2-navigation-lab#readme"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Run the ROS 2 version with Docker ↗</a
+            >
+          </p>
+        </div>
+      </details>
+      <footer>
+        <span>A navigation experiment by Leonardo Maglanoc</span
+        ><span>No server. No setup. Just a destination.</span>
+      </footer>
+    </main>
+  </body>
+</html>

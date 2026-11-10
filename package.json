@@ -1,0 +1,13 @@
+{
+  "name": "ros2-navigation-lab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bash scripts/build-web.sh",
+    "test": "playwright test",
+    "test:parity": "node tests/wasm-parity.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2"
+  }
+}

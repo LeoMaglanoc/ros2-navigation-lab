@@ -1,0 +1,10 @@
+# Goal: metres in the map frame. Destination snaps to a 0.4 m cell centre.
+float64 x
+float64 y
+---
+bool success
+string message
+---
+float64 x
+float64 y
+float64 distance_remaining

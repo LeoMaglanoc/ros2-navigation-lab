@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>navigation_interfaces</name><version>0.1.0</version>
+  <description>Small teaching action for 2D navigation, independent of Nav2.</description>
+  <maintainer email="leo.maglanoc@gmail.com">Leonardo Maglanoc</maintainer><license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <member_of_group>rosidl_interface_packages</member_of_group>
+</package>
