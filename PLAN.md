@@ -147,7 +147,9 @@ in one module, and which standard ROS features this experimental middleware lack
 
 ## Status
 
-R0, R1 and R2 passed: two real rcl nodes, typed ROS delivery, required-subscription fault
-test, and 15 Chrome tests across all three layouts. R3 Docker packaging and documentation
-are complete; the Docker-served app also passed 15/15. Public deployment verification
-is pending. Historical v1 tests are retained as prior evidence, not proof of the new runtime.
+R0–R3 are complete. Two real rcl nodes exchange typed messages through rmw_wasm_cpp;
+the required-subscription fault test passes. The Docker-served app, CI build and public
+HTTPS deployment each passed all 15 Chrome tests across the three layouts. GitHub Actions
+run 42836467264 deployed source commit `1b390ff`. README, architecture, learning guide,
+build notes, contributor rules and verification evidence describe the browser runtime.
+Historical v1 tests remain archived and are not used as proof of this redesign.

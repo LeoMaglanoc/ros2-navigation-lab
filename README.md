@@ -5,7 +5,7 @@ Click a destination, watch a robot plan with A*, and change its goal while it mo
 [ROS2WASM](https://ros2wasm.dev/). Rust implements the planner, controller and simulator;
 a thin C++ ROS layer carries goals and state between two real nodes.
 
-**[Live demo](https://leonardo-maglanoc.com/ros2-navigation-lab/)** ·
+**[Live demo](https://leonardo-maglanoc.com/ros2-navigation-lab/?v=ros2wasm-2)** ·
 [Architecture](docs/architecture.md) · [Learn ROS 2](docs/learning.md) ·
 [Plan](PLAN.md) · [Verification](docs/verification.md)
 

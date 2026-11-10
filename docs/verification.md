@@ -46,8 +46,23 @@ The test clock is frozen on the blank page before application loading. This fixe
 harness race where a relative 100 ms pause deadline could elapse during busy startup.
 Simulation advances only when a test explicitly advances the clock.
 
-Public deployment and live-site Chrome verification are the remaining release gates.
-The historical v1 evidence is archived under docs/history/.
+All release gates passed. [GitHub Actions run 42836467264](https://github.com/LeoMaglanoc/ros2-navigation-lab/actions/runs/42836467264)
+rebuilt source commit `1b390ffa7de93f302b67aa75b11fc5d194681a8a`, passed core/parity,
+15 Chrome checks and native-reference DDS/action tests, then deployed successfully.
+
+On the actual [public HTTPS site](https://leonardo-maglanoc.com/ros2-navigation-lab/),
+`BASE_URL=https://leonardo-maglanoc.com/ros2-navigation-lab/ npm test` passed **15/15**
+(33.8 s), including the real middleware/node/typed-delivery assertions and subscription
+removal/restoration test in laptop, portrait and landscape projects.
+
+The deployed ROS WASM returns HTTP 200 with `application/wasm` and size 686,498 bytes.
+The upstream license/notice directory is also served successfully. The expanded learning
+panel was inspected in portrait and has seven topic rows without horizontal overflow.
+Entry scripts/styles use the v2 release query to avoid mixing old cached JS with the new
+runtime. The README's fresh live link also bypasses a cached v1 document.
+
+Historical v1 evidence is archived under docs/history/. Subsequent documentation-only
+commits do not change the deployed application or rerun the build.
 
 ## Reproduce
 
